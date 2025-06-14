@@ -1,9 +1,9 @@
 package appwrite
 
 import (
-	"bot/appwrite/query"
 	"encoding/json"
 	"fmt"
+	"github.com/example/gowrite/query"
 	"net/url"
 
 	jsoniter "github.com/json-iterator/go"
