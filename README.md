@@ -18,9 +18,9 @@ import (
 )
 
 func main() {
-    client := appwrite.NewClient("https://localhost/v1", "<PROJECT_ID>", "<API_KEY>")
-    databases := appwrite.NewDatabases(client)
-    storage := appwrite.NewStorage(client)
+    client := gowrite.NewClient("https://localhost/v1", "<PROJECT_ID>", "<API_KEY>")
+    databases := gowrite.NewDatabases(client)
+    storage := gowrite.NewStorage(client)
     _ = databases
     _ = storage
 }
