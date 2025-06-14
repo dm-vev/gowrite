@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/dm-vev/gowrite/query"
 	"net/url"
+	"sync"
 
 	jsoniter "github.com/json-iterator/go"
 )
@@ -346,7 +347,10 @@ func (db *DatabaseService) DeleteDocument(databaseID, collectionID, documentID s
 // ListDocuments получает список всех документов в коллекции, обрабатывая пагинацию для получения
 // всех документов, превышающих лимит в 5000 за один запрос.
 func (db *DatabaseService) ListDocuments(databaseID, collectionID string, queries []string) ([]*Document, error) {
-	const maxLimit = 800
+	const (
+		maxLimit    = 800
+		concurrency = 5
+	)
 
 	// Предварительно фильтруем запросы, убирая limit и offset
 	baseQueries := make([]string, 0, len(queries))
@@ -358,22 +362,25 @@ func (db *DatabaseService) ListDocuments(databaseID, collectionID string, querie
 		}
 	}
 
-	var allDocuments []*Document
-	offset := 0
+	type pageResult struct {
+		docs    []*Document
+		err     error
+		hasMore bool
+	}
 
-	for {
+	fetchPage := func(off int) pageResult {
 		q := url.Values{}
-		for _, queryStr := range baseQueries {
-			q.Add("queries[]", queryStr)
+		for _, qs := range baseQueries {
+			q.Add("queries[]", qs)
 		}
 		q.Add("queries[]", query.Limit(maxLimit))
-		q.Add("queries[]", query.Offset(offset))
+		q.Add("queries[]", query.Offset(off))
 
 		path := fmt.Sprintf("/databases/%s/collections/%s/documents?%s", databaseID, collectionID, q.Encode())
 
 		respBody, err := db.Client.sendRequest("GET", path, nil)
 		if err != nil {
-			return nil, err
+			return pageResult{nil, err, false}
 		}
 
 		var result struct {
@@ -381,18 +388,60 @@ func (db *DatabaseService) ListDocuments(databaseID, collectionID string, querie
 		}
 
 		if err = _json.Unmarshal(respBody, &result); err != nil {
-			return nil, err
+			return pageResult{nil, err, false}
 		}
 
-		allDocuments = append(allDocuments, result.Documents...)
-		if len(result.Documents) < maxLimit {
-			break
-		}
-
-		offset += maxLimit
+		hasMore := len(result.Documents) == maxLimit
+		return pageResult{result.Documents, nil, hasMore}
 	}
 
-	return allDocuments, nil
+	var (
+		allDocs []*Document
+		off     int
+		mu      sync.Mutex
+		wg      sync.WaitGroup
+		errOnce sync.Once
+		retErr  error
+	)
+
+	worker := func() {
+		defer wg.Done()
+		for {
+			mu.Lock()
+			myOff := off
+			off += maxLimit
+			mu.Unlock()
+
+			res := fetchPage(myOff)
+			if res.err != nil {
+				errOnce.Do(func() { retErr = res.err })
+				return
+			}
+
+			if len(res.docs) == 0 {
+				return
+			}
+
+			mu.Lock()
+			allDocs = append(allDocs, res.docs...)
+			mu.Unlock()
+
+			if !res.hasMore {
+				return
+			}
+		}
+	}
+
+	for i := 0; i < concurrency; i++ {
+		wg.Add(1)
+		go worker()
+	}
+
+	wg.Wait()
+	if retErr != nil {
+		return nil, retErr
+	}
+	return allDocs, nil
 }
 
 func (db *DatabaseService) CountDocuments(databaseID, collectionID string, queries []string) (int, error) {
