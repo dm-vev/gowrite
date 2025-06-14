@@ -42,6 +42,15 @@ type Document struct {
 	Data        map[string]interface{} `json:"-"`
 }
 
+// Attribute represents a collection attribute.
+type Attribute struct {
+	Data map[string]interface{} `json:"-"`
+}
+
+func (a *Attribute) UnmarshalJSON(b []byte) error {
+	return json.Unmarshal(b, &a.Data)
+}
+
 // Permission constants
 const (
 	ReadAny    = "read(\"any\")"
@@ -437,4 +446,80 @@ func (db *DatabaseService) CountDocuments(databaseID, collectionID string, queri
 	}
 
 	return totalCount, nil
+}
+
+// ListAttributes retrieves attributes of a collection.
+func (db *DatabaseService) ListAttributes(databaseID, collectionID string) ([]*Attribute, error) {
+	path := fmt.Sprintf("/databases/%s/collections/%s/attributes", databaseID, collectionID)
+	respBody, err := db.Client.sendRequest("GET", path, nil)
+	if err != nil {
+		return nil, err
+	}
+	var result struct {
+		Attributes []*Attribute `json:"attributes"`
+	}
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return nil, err
+	}
+	return result.Attributes, nil
+}
+
+// CreateStringAttribute creates a string attribute in a collection.
+func (db *DatabaseService) CreateStringAttribute(databaseID, collectionID, key string, size int, required, array bool) (*Attribute, error) {
+	payload := map[string]interface{}{
+		"key":      key,
+		"size":     size,
+		"required": required,
+		"array":    array,
+	}
+	path := fmt.Sprintf("/databases/%s/collections/%s/attributes/string", databaseID, collectionID)
+	respBody, err := db.Client.sendRequest("POST", path, payload)
+	if err != nil {
+		return nil, err
+	}
+	var attr Attribute
+	if err := json.Unmarshal(respBody, &attr); err != nil {
+		return nil, err
+	}
+	return &attr, nil
+}
+
+// GetAttribute retrieves an attribute by key.
+func (db *DatabaseService) GetAttribute(databaseID, collectionID, key string) (*Attribute, error) {
+	path := fmt.Sprintf("/databases/%s/collections/%s/attributes/%s", databaseID, collectionID, key)
+	respBody, err := db.Client.sendRequest("GET", path, nil)
+	if err != nil {
+		return nil, err
+	}
+	var attr Attribute
+	if err := json.Unmarshal(respBody, &attr); err != nil {
+		return nil, err
+	}
+	return &attr, nil
+}
+
+// UpdateStringAttribute updates a string attribute.
+func (db *DatabaseService) UpdateStringAttribute(databaseID, collectionID, key string, required bool, def string, size int) (*Attribute, error) {
+	payload := map[string]interface{}{
+		"required": required,
+		"default":  def,
+		"size":     size,
+	}
+	path := fmt.Sprintf("/databases/%s/collections/%s/attributes/string/%s", databaseID, collectionID, key)
+	respBody, err := db.Client.sendRequest("PATCH", path, payload)
+	if err != nil {
+		return nil, err
+	}
+	var attr Attribute
+	if err := json.Unmarshal(respBody, &attr); err != nil {
+		return nil, err
+	}
+	return &attr, nil
+}
+
+// DeleteAttribute deletes an attribute.
+func (db *DatabaseService) DeleteAttribute(databaseID, collectionID, key string) error {
+	path := fmt.Sprintf("/databases/%s/collections/%s/attributes/%s", databaseID, collectionID, key)
+	_, err := db.Client.sendRequest("DELETE", path, nil)
+	return err
 }

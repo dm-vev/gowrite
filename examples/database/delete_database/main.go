@@ -11,8 +11,8 @@ import (
 const dbID = "example_database_id"
 
 func main() {
-	if err := godotenv.Load(); err != nil {
-		log.Fatal("failed to load .env file:", err)
+	if err := godotenv.Load("../.env"); err != nil {
+		log.Println("warning: failed to load .env file:", err)
 	}
 
 	endpoint := os.Getenv("APPWRITE_INSTANCE")

@@ -10,9 +10,9 @@ import (
 )
 
 const (
-	dbID  = "example_database_id"
-	colID = "example_collection_id"
-	docID = "example_document_id"
+	dbID    = "example_database_id"
+	colID   = "example_collection_id"
+	attrKey = "title"
 )
 
 func main() {
@@ -31,11 +31,10 @@ func main() {
 	client := gowrite.NewClient(endpoint, project, token)
 	databases := gowrite.NewDatabases(client)
 
-	data := map[string]interface{}{"example": true}
-	doc, err := databases.CreateDocument(dbID, colID, docID, data, []string{gowrite.ReadAny, gowrite.WriteAny})
+	attr, err := databases.UpdateStringAttribute(dbID, colID, attrKey, true, "", 255)
 	if err != nil {
-		log.Fatalf("failed to create document: %v", err)
+		log.Fatalf("failed to update attribute: %v", err)
 	}
 
-	fmt.Printf("created: %+v\n", doc)
+	fmt.Printf("updated attribute: %+v\n", attr)
 }

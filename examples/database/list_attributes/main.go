@@ -12,7 +12,6 @@ import (
 const (
 	dbID  = "example_database_id"
 	colID = "example_collection_id"
-	docID = "example_document_id"
 )
 
 func main() {
@@ -31,11 +30,12 @@ func main() {
 	client := gowrite.NewClient(endpoint, project, token)
 	databases := gowrite.NewDatabases(client)
 
-	data := map[string]interface{}{"example": true}
-	doc, err := databases.CreateDocument(dbID, colID, docID, data, []string{gowrite.ReadAny, gowrite.WriteAny})
+	attrs, err := databases.ListAttributes(dbID, colID)
 	if err != nil {
-		log.Fatalf("failed to create document: %v", err)
+		log.Fatalf("failed to list attributes: %v", err)
 	}
 
-	fmt.Printf("created: %+v\n", doc)
+	for i, a := range attrs {
+		fmt.Printf("%d) %+v\n", i+1, a)
+	}
 }
