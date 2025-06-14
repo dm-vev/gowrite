@@ -28,6 +28,8 @@ examples=(
     count_documents
     create_attribute
     get_attribute
+    update_attribute
+    list_attributes
     delete_attribute
 )
 

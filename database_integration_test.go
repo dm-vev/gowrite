@@ -84,6 +84,16 @@ func TestDatabaseIntegration(t *testing.T) {
 			}
 			log.Printf("Created collection - ID: %s Name: %s", col.ID, col.Name)
 
+			if _, err := db.CreateAttribute(dbID, colID, "num", gowrite.AttributeInteger, false, 0, false, map[string]interface{}{"min": 0, "max": 0}); err != nil {
+				t.Fatalf("CreateAttribute integer: %v", err)
+			}
+			if _, err := db.CreateAttribute(dbID, colID, "text", gowrite.AttributeString, false, "", false, map[string]interface{}{"size": 255}); err != nil {
+				t.Fatalf("CreateAttribute string: %v", err)
+			}
+			if _, err := db.CreateAttribute(dbID, colID, "flag", gowrite.AttributeBoolean, false, false, false, nil); err != nil {
+				t.Fatalf("CreateAttribute boolean: %v", err)
+			}
+
 			t.Cleanup(func(databaseID, collectionID string) func() {
 				return func() {
 					if err := db.DeleteCollection(databaseID, collectionID); err != nil {

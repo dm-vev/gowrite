@@ -31,10 +31,10 @@ func main() {
 	client := gowrite.NewClient(endpoint, project, token)
 	databases := gowrite.NewDatabases(client)
 
-	attr, err := databases.CreateAttribute(dbID, colID, attrKey, gowrite.AttributeBoolean, false, false, false, nil)
+	upd, err := databases.UpdateAttribute(dbID, colID, attrKey, gowrite.AttributeString, map[string]interface{}{"default": "new"})
 	if err != nil {
-		log.Fatalf("failed to create attribute: %v", err)
+		log.Fatalf("failed to update attribute: %v", err)
 	}
 
-	fmt.Printf("created: %+v\n", attr)
+	fmt.Printf("updated: %+v\n", upd)
 }

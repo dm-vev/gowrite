@@ -10,9 +10,8 @@ import (
 )
 
 const (
-	dbID    = "example_database_id"
-	colID   = "example_collection_id"
-	attrKey = "example_attr"
+	dbID  = "example_database_id"
+	colID = "example_collection_id"
 )
 
 func main() {
@@ -31,10 +30,12 @@ func main() {
 	client := gowrite.NewClient(endpoint, project, token)
 	databases := gowrite.NewDatabases(client)
 
-	attr, err := databases.CreateAttribute(dbID, colID, attrKey, gowrite.AttributeBoolean, false, false, false, nil)
+	attrs, err := databases.ListAttributes(dbID, colID, []string{})
 	if err != nil {
-		log.Fatalf("failed to create attribute: %v", err)
+		log.Fatalf("failed to list attributes: %v", err)
 	}
 
-	fmt.Printf("created: %+v\n", attr)
+	for _, a := range attrs {
+		fmt.Printf("attribute: %+v\n", a)
+	}
 }
