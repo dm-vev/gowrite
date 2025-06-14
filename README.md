@@ -26,3 +26,14 @@ func main() {
 }
 ```
 
+
+## CI/CD
+
+Для запуска интеграционных тестов в GitHub Actions добавьте следующие секреты репозитория:
+
+- `APPWRITE_ENDPOINT` — URL сервера Appwrite
+- `APPWRITE_PROJECT_ID` — идентификатор проекта
+- `APPWRITE_API_KEY` — API‑ключ с правами на работу с базой данных
+
+Секреты можно добавить в разделе **Settings → Secrets and variables → Actions**. После этого workflow `.github/workflows/test.yml` автоматически выполнит `go test -v ./...`.
+
