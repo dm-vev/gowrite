@@ -3,7 +3,7 @@ package appwrite
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/example/gowrite/query"
+	"github.com/dm-vev/gowrite/query"
 	"net/url"
 
 	jsoniter "github.com/json-iterator/go"

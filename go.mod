@@ -1,4 +1,4 @@
-module github.com/example/gowrite
+module github.com/dm-vev/gowrite
 
 go 1.23.8
 
