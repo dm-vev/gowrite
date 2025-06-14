@@ -42,6 +42,14 @@ type Document struct {
 	Data        map[string]interface{} `json:"-"`
 }
 
+// Attribute represents a collection attribute.
+type Attribute struct {
+	Key      string `json:"key"`
+	Type     string `json:"type"`
+	Required bool   `json:"required"`
+	Array    bool   `json:"array"`
+}
+
 // Permission constants
 const (
 	ReadAny    = "read(\"any\")"
@@ -437,4 +445,51 @@ func (db *DatabaseService) CountDocuments(databaseID, collectionID string, queri
 	}
 
 	return totalCount, nil
+}
+
+// CreateStringAttribute creates a new string attribute for a collection.
+func (db *DatabaseService) CreateStringAttribute(databaseID, collectionID, key string, size int, required bool, defaultValue string, array bool) (*Attribute, error) {
+	payload := map[string]interface{}{
+		"key":      key,
+		"size":     size,
+		"required": required,
+		"default":  defaultValue,
+		"array":    array,
+	}
+
+	path := fmt.Sprintf("/databases/%s/collections/%s/attributes/string", databaseID, collectionID)
+	respBody, err := db.Client.sendRequest("POST", path, payload)
+	if err != nil {
+		return nil, err
+	}
+
+	var attr Attribute
+	if err = json.Unmarshal(respBody, &attr); err != nil {
+		return nil, err
+	}
+
+	return &attr, nil
+}
+
+// GetAttribute retrieves an attribute from a collection.
+func (db *DatabaseService) GetAttribute(databaseID, collectionID, key string) (*Attribute, error) {
+	path := fmt.Sprintf("/databases/%s/collections/%s/attributes/%s", databaseID, collectionID, key)
+	respBody, err := db.Client.sendRequest("GET", path, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var attr Attribute
+	if err = json.Unmarshal(respBody, &attr); err != nil {
+		return nil, err
+	}
+
+	return &attr, nil
+}
+
+// DeleteAttribute deletes an attribute from a collection.
+func (db *DatabaseService) DeleteAttribute(databaseID, collectionID, key string) error {
+	path := fmt.Sprintf("/databases/%s/collections/%s/attributes/%s", databaseID, collectionID, key)
+	_, err := db.Client.sendRequest("DELETE", path, nil)
+	return err
 }
