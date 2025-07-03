@@ -70,6 +70,21 @@ func (s *UsersService) CreateUser(userID, email, phone, password, name string) (
 	return &user, nil
 }
 
+func (s *UsersService) CreateAnonymousUser(userID string) (*User, error) {
+	payload := map[string]interface{}{
+		"userId": userID,
+	}
+	resp, err := s.Client.sendRequest("POST", "/users", payload)
+	if err != nil {
+		return nil, err
+	}
+	var user User
+	if err = json.Unmarshal(resp, &user); err != nil {
+		return nil, err
+	}
+	return &user, nil
+}
+
 // CreateArgon2User creates a user with Argon2 hashed password.
 func (s *UsersService) CreateArgon2User(userID, email, password, name string) (*User, error) {
 	payload := map[string]interface{}{
