@@ -593,7 +593,11 @@ func (db *DatabaseService) ListDocuments(databaseID, collectionID string, querie
 	}
 
 	if db.cacheEnabled() {
-		if data, err := json.Marshal(allDocs); err == nil {
+		docs := allDocs
+		if docs == nil {
+			docs = []*Document{}
+		}
+		if data, err := json.Marshal(docs); err == nil {
 			if err := db.Cache.Set(context.Background(), cacheKey, string(data), db.CacheTTL); err == nil {
 				db.trackCollectionCacheKey(databaseID, collectionID, cacheKey)
 			}
