@@ -2,9 +2,13 @@ package gowrite
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -49,6 +53,20 @@ type Document struct {
 	Data        map[string]interface{} `json:"-"`
 }
 
+func (d Document) MarshalJSON() ([]byte, error) {
+	out := make(map[string]interface{}, len(d.Data)+5)
+	out["$id"] = d.ID
+	out["$collectionId"] = d.Collection
+	out["$databaseId"] = d.Database
+	out["$permissions"] = d.Permissions
+	if d.Data != nil {
+		for k, v := range d.Data {
+			out[k] = v
+		}
+	}
+	return json.Marshal(out)
+}
+
 // Attribute represents a collection attribute.
 type Attribute struct {
 	Key      string `json:"key"`
@@ -89,6 +107,78 @@ func (db *DatabaseService) invalidateDocumentCache(databaseID, collectionID, doc
 		return
 	}
 	_ = db.Cache.Delete(context.Background(), db.documentCacheKey(databaseID, collectionID, documentID))
+	db.invalidateCollectionCache(databaseID, collectionID)
+}
+
+func (db *DatabaseService) collectionCacheIndexKey(databaseID, collectionID string) string {
+	return fmt.Sprintf("colidx:%s:%s", databaseID, collectionID)
+}
+
+func (db *DatabaseService) queryHash(databaseID, collectionID string, queries []string) string {
+	hasher := sha256.New()
+	hasher.Write([]byte(databaseID))
+	hasher.Write([]byte{0})
+	hasher.Write([]byte(collectionID))
+	for _, q := range queries {
+		hasher.Write([]byte{0})
+		hasher.Write([]byte(q))
+	}
+	return hex.EncodeToString(hasher.Sum(nil))
+}
+
+func (db *DatabaseService) listCacheKey(databaseID, collectionID string, queries []string) string {
+	return fmt.Sprintf("list:%s", db.queryHash(databaseID, collectionID, queries))
+}
+
+func (db *DatabaseService) countCacheKey(databaseID, collectionID string, queries []string) string {
+	return fmt.Sprintf("count:%s", db.queryHash(databaseID, collectionID, queries))
+}
+
+func (db *DatabaseService) trackCollectionCacheKey(databaseID, collectionID, cacheKey string) {
+	if !db.cacheEnabled() {
+		return
+	}
+	ctx := context.Background()
+	indexKey := db.collectionCacheIndexKey(databaseID, collectionID)
+	existing, err := db.Cache.Get(ctx, indexKey)
+	if err != nil {
+		existing = ""
+	}
+
+	var keys []string
+	if existing != "" {
+		keys = strings.Split(existing, ",")
+		for _, k := range keys {
+			if k == cacheKey {
+				// already tracked
+				_ = db.Cache.Set(ctx, indexKey, existing, db.CacheTTL)
+				return
+			}
+		}
+	}
+	keys = append(keys, cacheKey)
+	indexValue := strings.Join(keys, ",")
+	_ = db.Cache.Set(ctx, indexKey, indexValue, db.CacheTTL)
+}
+
+func (db *DatabaseService) invalidateCollectionCache(databaseID, collectionID string) {
+	if !db.cacheEnabled() {
+		return
+	}
+	ctx := context.Background()
+	indexKey := db.collectionCacheIndexKey(databaseID, collectionID)
+	existing, err := db.Cache.Get(ctx, indexKey)
+	if err != nil || existing == "" {
+		return
+	}
+	keys := strings.Split(existing, ",")
+	for _, k := range keys {
+		if strings.TrimSpace(k) == "" {
+			continue
+		}
+		_ = db.Cache.Delete(ctx, k)
+	}
+	_ = db.Cache.Delete(ctx, indexKey)
 }
 
 // ListDatabases retrieves a list of databases.
@@ -401,6 +491,17 @@ func (db *DatabaseService) ListDocuments(databaseID, collectionID string, querie
 		concurrency = 5
 	)
 
+	cacheKey := ""
+	if db.cacheEnabled() {
+		cacheKey = db.listCacheKey(databaseID, collectionID, queries)
+		if cached, err := db.Cache.Get(context.Background(), cacheKey); err == nil && cached != "" {
+			var cachedDocs []*Document
+			if err := json.Unmarshal([]byte(cached), &cachedDocs); err == nil {
+				return cachedDocs, nil
+			}
+		}
+	}
+
 	// Предварительно фильтруем запросы, убирая limit и offset
 	baseQueries := make([]string, 0, len(queries))
 	for _, q := range queries {
@@ -490,11 +591,29 @@ func (db *DatabaseService) ListDocuments(databaseID, collectionID string, querie
 	if retErr != nil {
 		return nil, retErr
 	}
+
+	if db.cacheEnabled() {
+		if data, err := json.Marshal(allDocs); err == nil {
+			if err := db.Cache.Set(context.Background(), cacheKey, string(data), db.CacheTTL); err == nil {
+				db.trackCollectionCacheKey(databaseID, collectionID, cacheKey)
+			}
+		}
+	}
 	return allDocs, nil
 }
 
 func (db *DatabaseService) CountDocuments(databaseID, collectionID string, queries []string) (int, error) {
 	const maxLimit = 800
+
+	cacheKey := ""
+	if db.cacheEnabled() {
+		cacheKey = db.countCacheKey(databaseID, collectionID, queries)
+		if cached, err := db.Cache.Get(context.Background(), cacheKey); err == nil && cached != "" {
+			if v, err := strconv.Atoi(cached); err == nil {
+				return v, nil
+			}
+		}
+	}
 
 	// Предварительно фильтруем запросы, убирая limit и offset
 	baseQueries := make([]string, 0, len(queries))
@@ -540,6 +659,12 @@ func (db *DatabaseService) CountDocuments(databaseID, collectionID string, queri
 		}
 
 		offset += maxLimit
+	}
+
+	if db.cacheEnabled() {
+		if err := db.Cache.Set(context.Background(), cacheKey, strconv.Itoa(totalCount), db.CacheTTL); err == nil {
+			db.trackCollectionCacheKey(databaseID, collectionID, cacheKey)
+		}
 	}
 
 	return totalCount, nil
