@@ -1,11 +1,15 @@
 package gowrite
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/dm-vev/gowrite/query"
 	"net/url"
 	"sync"
+	"time"
+
+	"github.com/dm-vev/gowrite/cache"
+	"github.com/dm-vev/gowrite/query"
 
 	jsoniter "github.com/json-iterator/go"
 )
@@ -13,7 +17,9 @@ import (
 var _json = jsoniter.ConfigFastest
 
 type DatabaseService struct {
-	Client *AppwriteClient
+	Client   *AppwriteClient
+	Cache    cache.Cache
+	CacheTTL time.Duration
 }
 
 // Database represents an Appwrite database.
@@ -60,7 +66,29 @@ const (
 )
 
 func NewDatabases(client *AppwriteClient) *DatabaseService {
-	return &DatabaseService{client}
+	return &DatabaseService{Client: client}
+}
+
+// WithCache configures the database service to use a cache with the provided TTL.
+func (db *DatabaseService) WithCache(c cache.Cache, ttl time.Duration) *DatabaseService {
+	db.Cache = c
+	db.CacheTTL = ttl
+	return db
+}
+
+func (db *DatabaseService) cacheEnabled() bool {
+	return db != nil && db.Cache != nil && db.CacheTTL > 0
+}
+
+func (db *DatabaseService) documentCacheKey(databaseID, collectionID, documentID string) string {
+	return fmt.Sprintf("doc:%s:%s:%s", databaseID, collectionID, documentID)
+}
+
+func (db *DatabaseService) invalidateDocumentCache(databaseID, collectionID, documentID string) {
+	if !db.cacheEnabled() {
+		return
+	}
+	_ = db.Cache.Delete(context.Background(), db.documentCacheKey(databaseID, collectionID, documentID))
 }
 
 // ListDatabases retrieves a list of databases.
@@ -263,6 +291,8 @@ func (db *DatabaseService) CreateDocument(databaseID, collectionID, documentID s
 		return nil, err
 	}
 
+	db.invalidateDocumentCache(databaseID, collectionID, documentID)
+
 	return &document, nil
 }
 
@@ -300,6 +330,16 @@ func (d *Document) UnmarshalJSON(b []byte) error {
 
 // GetDocument retrieves a document by its ID.
 func (db *DatabaseService) GetDocument(databaseID, collectionID, documentID string) (*Document, error) {
+	cacheKey := db.documentCacheKey(databaseID, collectionID, documentID)
+	if db.cacheEnabled() {
+		if cached, err := db.Cache.Get(context.Background(), cacheKey); err == nil && cached != "" {
+			var cachedDocument Document
+			if err := cachedDocument.UnmarshalJSON([]byte(cached)); err == nil {
+				return &cachedDocument, nil
+			}
+		}
+	}
+
 	path := fmt.Sprintf("/databases/%s/collections/%s/documents/%s", databaseID, collectionID, documentID)
 	respBody, err := db.Client.sendRequest("GET", path, nil)
 	if err != nil {
@@ -310,6 +350,10 @@ func (db *DatabaseService) GetDocument(databaseID, collectionID, documentID stri
 	err = document.UnmarshalJSON(respBody)
 	if err != nil {
 		return nil, err
+	}
+
+	if db.cacheEnabled() {
+		_ = db.Cache.Set(context.Background(), cacheKey, string(respBody), db.CacheTTL)
 	}
 
 	return &document, nil
@@ -334,6 +378,8 @@ func (db *DatabaseService) UpdateDocument(databaseID, collectionID, documentID s
 		return nil, err
 	}
 
+	db.invalidateDocumentCache(databaseID, collectionID, documentID)
+
 	return &document, nil
 }
 
@@ -341,6 +387,9 @@ func (db *DatabaseService) UpdateDocument(databaseID, collectionID, documentID s
 func (db *DatabaseService) DeleteDocument(databaseID, collectionID, documentID string) error {
 	path := fmt.Sprintf("/databases/%s/collections/%s/documents/%s", databaseID, collectionID, documentID)
 	_, err := db.Client.sendRequest("DELETE", path, nil)
+	if err == nil {
+		db.invalidateDocumentCache(databaseID, collectionID, documentID)
+	}
 	return err
 }
 
